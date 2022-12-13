@@ -1,0 +1,568 @@
+
+# library(FIRVr, lib.loc = 'N:/Offdata/RM/_R code repository/RMPackages')
+# library(futile.logger)
+# library(lubridate)
+# library(plotly)
+# library(Rblpapi)
+# library(roll)
+# library(tidyverse)
+
+#' @title Calculate rolling beta of two time series 
+#'
+#' @description Allows you to calculate rolling beta realtionship between independent and dependent variables over given window 
+#' 
+#' @details function expected two (time series) data frames, in long format from which the rolling beta/relationship is calculated 
+#'
+#'
+#' @param dependent Dependent variable. Object of class data.frame, with column names 'Date' and 'Value' 
+#'
+#' @param independent Independent variable. Object of class data.frame, with column names 'Date' and 'Value' 
+
+#' @param window window to calculate beta on a rolling basis. The time horizon of rolling window for the beta in days
+#'
+#' @param method method to calculate beta, choice are "change", "level", "percent_change", "log_change", "log_level"
+#' 
+#' @param change_window  is the time horizon for the change measurement, eg 5 would be a weekly change, 22 a monthly
+#' 
+#' @param include_r2  include R squared in the output series 
+#' 
+#' @return long formatted data frame of beta values calculated on a rolling basis 
+#'
+#' @examples
+#' \dontrun{ 
+#'     calc_beta_ts(independent, dependent
+#'                  window = 90,
+#'                  method = "change",
+#'                  change_window = 5,
+#'                  include_r2 = TRUE)
+#'   }
+#' 
+#' @importFrom magrittr %>%
+#' @export
+
+calc_beta_ts <- function(dependent,
+                         independent,
+                         window = 180,
+                         method = "change",
+                         change_window = 5,
+                         include_r2 = FALSE
+){
+  
+  methods <- c("change", "level", "percent_change", "log_change", "log_level")
+  if(!(method %in% methods)){futile.logger::flog.error(paste0("Beta calculation method specified: ", method, ", not supported. Check input."))}
+  
+  if (!is.numeric(window)) {
+    futile.logger::flog.error("window input must be numeric")
+  }
+  
+  if (!is.numeric(change_window)) {
+    futile.logger::flog.error("change window input must be numeric")
+  }
+  
+  if (!is.logical(include_r2)) {
+    futile.logger::flog.error("include r squared must be logical, please enter TRUE/FALSE")
+  }
+  
+  if (!is.data.frame(dependent) | !is.data.frame(independent)) {
+    futile.logger::flog.error("Independent and dependent inputs must be a data frame object")
+  }
+  
+  if (!all(c("Value", "Date") %in% colnames(dependent))) {
+    futile.logger::flog.error("dependent data must have colnames: 'Value', 'Date'")
+  }
+  
+  if (!all(c("Value", "Date") %in% colnames(independent))) {
+    futile.logger::flog.error("independent data must have colnames: 'Value', 'Date'")
+  }
+  
+  data <- dependent %>% 
+    dplyr::rename(dependent = Value) %>%
+    dplyr::full_join(independent, 
+                by = "Date") %>%
+    dplyr::rename(independent = Value) %>%
+    stats::na.omit() 
+  
+  if(method == "change"){
+    
+    data <- data %>%
+      dplyr::mutate(dependent = dependent - dplyr::lag(dependent, change_window),
+                    independent = independent - dplyr::lag(independent, change_window)) %>%
+      stats::na.omit()
+    
+  }else if(method == "percent_change"){
+    
+    data <- data %>%
+      dplyr::mutate(dependent = dependent / dplyr::lag(dependent, change_window),
+                    independent = independent / dplyr::lag(independent, change_window)) %>%
+      stats::na.omit()
+    
+  }else if(method == "log_change"){ 
+    
+    data <- data %>%
+      dplyr::mutate(dependent = log(dependent / dplyr::lag(dependent, change_window)),
+                    independent = log(independent / dplyr::lag(independent, change_window))) %>%
+      stats::na.omit()
+    
+  }else if(method == "log_level"){ 
+    
+    data <- data %>%
+      dplyr::mutate(dependent = log(dependent),
+                    independent = log(independent)) %>%
+      stats::na.omit()
+    
+  }
+  
+  rolling_result <- roll::roll_lm(x = data$dependent,
+                                  y = data$independent,
+                                  width = window)
+  
+  result <- data %>%
+    dplyr::select(Date) %>%
+    cbind(as.data.frame(rolling_result$coefficients)) %>%
+    dplyr::rename(beta = x1,
+                  intercept = `(Intercept)`) %>% 
+    dplyr::mutate(change_window = paste0(change_window), window = paste0(window))
+  
+  if(include_r2 == TRUE){
+    
+    result <- result %>% 
+      cbind(as.data.frame(rolling_result$r.squared))
+    
+  }
+  
+  return(result %>% 
+           stats::na.omit())
+}
+
+
+#' @title Plot rolling beta series
+#'
+#' @description For a given series, this function will return a time series plot of a rolling beta between two variables 
+#' 
+#' @details Plots rolling beta series for given input 
+#'
+#'
+#' @param beta_ts a data frame class object in long format, with column names 'Date' and 'beta' and optionally 'intercept'. It can be generated by the `calc_beta_ts` function
+#'
+#' @param include_intercept Object of class boolean, this will plot the rolling intercept on a second y-axis. This can be helpful for guaging if there is a large level shift.
+#'
+#'
+#' @return rolling beta ts plot 
+#'
+#' @examples
+#' \dontrun{
+#'     plot_beta_ts(US_oil_beta)
+#' }
+#' 
+#'
+#' @export
+
+
+
+plot_beta_ts <- function(beta_ts, 
+                         include_intercept = FALSE){
+
+  if (!is.data.frame(beta_ts)) {
+    futile.logger::flog.error("beta time series input must be a data frame object")
+  }
+  
+  if (!all(c("beta", "Date") %in% colnames(beta_ts))) {
+    futile.logger::flog.error("dependent data must have colnames: 'beta', 'Date'")
+  }
+
+  
+  beta_plot <- beta_ts %>%
+    plotly::plot_ly(x = ~Date, y = ~beta, type= "scatter", mode = "lines", name = "Rolling beta") %>%
+    plotly::layout(yaxis = list(title = "Rolling regression beta", rangemode = "tozero"),
+                    xaxis = list(zeroline = TRUE, showline = TRUE))
+  
+  if (include_intercept == TRUE) {
+    if (!all(c("intercept") %in% colnames(beta_ts))) {
+      futile.logger::flog.error("If include intercept is TRUE, then dependent data must have colnames: 'intercept'")
+    }
+    
+    beta_plot <- beta_ts %>%
+      plotly::plot_ly(
+        x = ~ Date,
+        y = ~ beta,
+        type = "scatter",
+        mode = "lines",
+        name = "Rolling beta"
+      ) %>%
+      plotly::add_trace(
+        x = ~ Date,
+        y = ~ intercept,
+        type = "scatter",
+        mode = "lines",
+        name = "Rolling intercept",
+        yaxis = "y2"
+      ) %>%
+      plotly::layout(
+        yaxis = list(title = "Rolling regression beta", rangemode = "tozero"),
+        xaxis = list(zeroline = TRUE, showline = TRUE),
+        yaxis2 = list(
+          title = "Intercept value (rhs)",
+          overlaying = "y",
+          side = "right"
+        )
+      )
+    
+  } else{
+    beta_plot <- beta_ts %>%
+      plotly::plot_ly(
+        x = ~ Date,
+        y = ~ beta,
+        type = "scatter",
+        mode = "lines",
+        name = "Rolling beta"
+      ) %>%
+      plotly::layout(
+        yaxis = list(title = "Rolling regression beta", rangemode = "tozero"),
+        xaxis = list(zeroline = TRUE, showline = TRUE)
+      )
+  }
+  
+  return(beta_plot)
+  
+}
+
+#' @title Calculate rolling beta of two time series 
+#'
+#' @description Allows you to calculate rolling beta realtionship between independent and dependent variables over given window 
+#' 
+#' @details function expected two (time series) data frames, in long format from which the rolling beta/relationship is calculated 
+#'
+#'
+#' @param dependent_security Dependent security ticker, object of class character, e.g. "USGGBE03 Index"
+#'
+#' @param independent_security Independent security ticker, object of class character, e.g. "USGGBE03 Index"
+#' 
+#' @param dependent_field Dependent security bloomberg field, object of class character, e.g. "PX_LAST"
+#'
+#' @param independent_field Independent security bloomberg field, object of class character, e.g. "PX_LAST"
+#' 
+#' @param to_date date object, end date of the series calculation
+#' 
+#' @param from_date date object, start date of the series calculation 
+#' 
+#' @param window window to calculate beta on a rolling basis. The time horizon of rolling window for the beta in days
+#'
+#' @param method method to calculate beta, choice are "change", "level", "percent_change", "log_change", "log_level"
+#' 
+#' @param change_window  is the time horizon for the change measurement, eg 5 would be a weekly change, 22 a monthly
+#' 
+#' @param include_r2  include R squared in the output series 
+#' 
+#' @return long formatted data frame of beta values calculated on a rolling basis 
+#'
+#' @examples
+#' \dontrun{
+#' calc_beta_ts_bloomberg(dependent_security = "USGGBE03 Index", 
+#' dependent_field = "PX_LAST", 
+#' independent_security = "CL1 Comdty", 
+#' independent_field = "PX_LAST",
+#' window = 90,
+#' method = "change",
+#' change_window = 5,
+#' include_r2 = TRUE)
+#' }
+#'
+#' @export
+
+
+calc_beta_ts_bloomberg <- function(dependent_security,
+                                   dependent_field,
+                                   independent_security,
+                                   independent_field,
+                                   to_date = Sys.Date(),
+                                   from_date = Sys.Date() - 365,
+                                   window = 180,
+                                   method = "level",
+                                   change_window = 5,
+                                   include_r2 = FALSE){
+  
+  if (!is.numeric(window)) {
+    futile.logger::flog.error("window input must be numeric")
+  }
+  
+  if (!is.numeric(change_window)) {
+    futile.logger::flog.error("change window input must be numeric")
+  }
+  
+  if (!is.logical(include_r2)) {
+    futile.logger::flog.error("include r squared must be logical, please enter TRUE/FALSE")
+  }
+  
+  if (!is.character(dependent_security)) {
+    futile.logger::flog.error("dependent security must be character string and a valid bloomberg ticker")
+  }
+  
+  if (!is.character(dependent_field)) {
+    futile.logger::flog.error("dependent field must be character string and a valid bloomberg field")
+  }
+  
+  if (!is.character(independent_security)) {
+    futile.logger::flog.error("independent security must be character string and a valid bloomberg ticker")
+  }
+  
+  if (!is.character(independent_field)) {
+    futile.logger::flog.error("independent field must be character string and a valid bloomberg field")
+  }
+  
+  
+  if (!lubridate::is.Date(from_date) | !lubridate::is.Date(to_date)){
+    futile.logger::flog.error('Date input not in correct format')
+  }
+
+  dependent <- FIRVr::bloomberg_query(dependent_security,
+                                      dependent_field,
+                                      from_date = from_date,
+                                      to_date = to_date) %>%
+    dplyr::select(Date, Value)
+  
+  independent <- FIRVr::bloomberg_query(independent_security,
+                                        independent_field,
+                                        from_date = from_date,
+                                        to_date = to_date) %>%
+    dplyr::select(Date, Value)
+  
+  if (nrow(dependent) > 0 & nrow(independent) > 0) {
+    
+    data <- InflationTools::calc_beta_ts(
+      dependent = dependent,
+      independent = independent,
+      window = window,
+      method = method,
+      change_window = 5,
+      include_r2 = include_r2
+    ) %>% 
+      dplyr::mutate(change_window = paste0(change_window), window = paste0(window))
+    
+    return(data)
+    
+  } else{
+    futile.logger::flog.error("No data for one of the bloomberg tickers!")
+  }
+  
+  
+  
+}
+
+
+
+#' @title Calculate rolling beta of two time series 
+#'
+#' @description Allows you to calculate rolling beta realtionship between independent and dependent variables over given window 
+#' 
+#' @details function expected two (time series) data frames, in long format from which the rolling beta/relationship is calculated 
+#'
+#'
+#' @param dependent_security Dependent security ticker, object of class character, e.g. "USGGBE03 Index"
+#'
+#' @param independent_security Independent security ticker, object of class character, e.g. "USGGBE03 Index"
+#' 
+#' @param dependent_field Dependent security bloomberg field, object of class character, e.g. "PX_LAST"
+#'
+#' @param independent_field Independent security bloomberg field, object of class character, e.g. "PX_LAST"
+#' 
+#' @param to_date date object, end date of the series calculation
+#' 
+#' @param from_date date object, start date of the series calculation 
+#' 
+#' @param window vector of window to calculate beta stability for different values. The time horizon of rolling window for the beta in days
+#'
+#' @param method method to calculate beta, choice are "change", "level", "percent_change", "log_change", "log_level"
+#' 
+#' @param change_window  vector of chnage windows, the time horizon for the change measurement, eg 5 would be a weekly change, 22 a monthly
+#' 
+#' @param include_r2  include R squared in the output series 
+#' 
+#' @return long formatted data frame of beta values calculated on a rolling basis 
+#'
+#' @examples
+#' \dontrun{
+#' calc_beta_stability_bloomberg(dependent_security = "USGGBE03 Index", 
+#' dependent_field = "PX_LAST", 
+#' independent_security = "CL1 Comdty", 
+#' independent_field = "PX_LAST",
+#' window = c(10, 30, 90),
+#' method = "change",
+#' change_window = c(5, 10, 20),
+#' include_r2 = TRUE)
+#' }
+#'
+#' @export
+
+
+calc_beta_stability_bloomberg <- function(dependent_security,
+                                          dependent_field,
+                                          independent_security,
+                                          independent_field,
+                                          to_date = Sys.Date(),
+                                          from_date = Sys.Date() - 365,
+                                          window = c(30, 90, 180),
+                                          method = "change",
+                                          change_window = c(5, 20, 30),
+                                          include_r2 = FALSE){
+  
+  if (!is.numeric(window)) {
+    futile.logger::flog.error("window input must be numeric")
+  }
+  
+  if (!is.numeric(change_window)) {
+    futile.logger::flog.error("change window input must be numeric")
+  }
+  
+  if (!is.logical(include_r2)) {
+    futile.logger::flog.error("include r squared must be logical, please enter TRUE/FALSE")
+  }
+  
+  if (!is.character(dependent_security)) {
+    futile.logger::flog.error("dependent security must be character string and a valid bloomberg ticker")
+  }
+  
+  if (!is.character(dependent_field)) {
+    futile.logger::flog.error("dependent field must be character string and a valid bloomberg field")
+  }
+  
+  if (!is.character(independent_security)) {
+    futile.logger::flog.error("independent security must be character string and a valid bloomberg ticker")
+  }
+  
+  if (!is.character(independent_field)) {
+    futile.logger::flog.error("independent field must be character string and a valid bloomberg field")
+  }
+  
+  if (length(window) < 2 & length(change_window) < 2) {
+    futile.logger::flog.error("change_window or window must contain at least 2 values")
+  }
+  
+  if (!lubridate::is.Date(from_date) | !lubridate::is.Date(to_date)){
+    futile.logger::flog.error('Date input not in correct format')
+  }
+  
+  dependent <- FIRVr::bloomberg_query(dependent_security,
+                                      dependent_field,
+                                      from_date = from_date,
+                                      to_date = to_date) %>%
+    dplyr::select(Date, Value)
+  
+  independent <- FIRVr::bloomberg_query(independent_security,
+                                        independent_field,
+                                        from_date = from_date,
+                                        to_date = to_date) %>%
+    dplyr::select(Date, Value)
+  
+  
+  data <- list()
+  crossing <- tidyr::crossing(change_window, window)
+  
+  if (nrow(dependent) > 0 &
+      nrow(independent) > 0) {
+    
+    for (i in 1:nrow(crossing)) {
+      
+      data[[i]] <- InflationTools::calc_beta_ts(
+        dependent = dependent,
+        independent = independent,
+        window = as.numeric(crossing[i, 2]),
+        method = "change",
+        change_window =  as.numeric(crossing[i, 1]),
+        include_r2 = include_r2
+      ) %>%
+        dplyr::mutate(change_window = paste0(as.numeric(crossing[i, 1])),
+                      window = paste0( as.numeric(crossing[i, 2])))
+    }
+    
+    data <- data.table::rbindlist(data) %>% dplyr::as_tibble()
+     
+    beta_stability <- data %>%
+      dplyr::group_by(window, change_window) %>%
+      dplyr::summarize(
+        mean = mean(beta),
+        sd = stats::sd(beta),
+        skew = e1071::skewness(beta),
+        kurt = e1071::kurtosis(beta),
+        min = min(beta),
+        q25 = stats::quantile(beta, 0.25),
+        q50 = stats::quantile(beta, 0.50),
+        q75 = stats::quantile(beta, 0.75),
+        max = max(beta),
+        min = min(beta),
+        n = dplyr::n()
+      ) %>%
+      dplyr::ungroup()
+    
+    return(beta_stability)
+    
+  } else{
+    futile.logger::flog.error("No data for one of the bloomberg tickers!")
+  }
+}
+
+
+
+#' @title Plot heat map of beta stability measures
+#'
+#' @description For a set of measures of centrality/dispersian of rolling beta series, this function will return a heat map across the window/change window parameters
+#' 
+#' @details Plots heatmap of beat stability 
+#'
+#' @param beta_stability a data frame class object in long format, with column names 'window' and 'change_window' and a measure, e.g. 'mean'. It can be generated by the `calc_beta_stability_bloomberg` function
+#'
+#' @param measure Object of class character, the measure to be plotted
+#'
+#'
+#' @return rolling beta stability heatmap 
+#'
+#' @examples
+#' \dontrun{
+#'     plot_beta_stability(beta_stability, measure = "mean")
+#' }
+#' 
+#'
+#' @export
+
+
+
+plot_beta_stability <- function(beta_stability, 
+                                measure = "mean"){
+  
+  if (!is.data.frame(beta_stability)) {
+    futile.logger::flog.error("beta stability input must be a data frame object")
+  }
+  
+  if (!all(c("window", "change_window", measure) %in% colnames(beta_stability))) {
+    futile.logger::flog.error("dependent data must have colnames: 'window', 'change_window'")
+  }
+  
+  if (nrow(beta_stability) > 0 &  all(c(paste0("window"), paste0("change_window"), paste0(measure)) %in% colnames(beta_stability))) {
+    
+    xaxis <- rlang:: sym("window")
+    yaxis <- rlang:: sym("change_window")
+    fill <- rlang:: sym(paste0(measure))
+    
+    p <- 
+      ggplot2::ggplot(beta_stability, aes(!! xaxis, !! yaxis)) +
+      ggplot2::geom_tile(aes(fill = !! fill), colour = "white") + 
+      ggplot2::scale_y_discrete(expand = c(0, 0)) + 
+      ggplot2::scale_fill_gradient(low = "white", high =  "#4a7e8f") +
+      ggplot2::theme_minimal(base_size = 16)  +
+      ggplot2::theme(axis.line.y = ggplot2::element_line(colour = "grey70"),
+                     axis.line.x = ggplot2::element_line(colour = "grey"),
+                     panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank())
+    
+  }  else{
+    text <- paste("No rows in DF")
+    p <- ggplot2::ggplot() +
+      ggplot2::theme_bw() +
+      ggplot2::theme(panel.grid.major = element_blank(),
+                     panel.grid.minor = element_blank())
+    
+  }
+  
+  return(p)
+  
+  
+}

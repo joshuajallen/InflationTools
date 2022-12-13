@@ -1,0 +1,46 @@
+Package: InflationTools
+Title: Inflation trading and calculations
+Version: 0.1.0.1000
+Authors@R: c(
+    person(given = "Sam",
+           family = "H",
+           role = c("aut", "cre"),
+           email = "325061@bankofengland.co.uk"),
+	person(given ="Josh", 
+			family = "A",
+			role = c("aut", "ctb"),
+			email = "328576@bankofengland.co.uk"))
+Description: The InflationTools package provides a range of tools for 
+	fixed income inflation trading and risk management. including seasonality
+	adjustment, bond and swap calculations, and inflation database functionality. 
+License: MIT + LICENSE file
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Depends: 
+    R (>= 2.10)
+Suggests: 
+    seasonal,
+    knitr,
+    x13binary,
+    e1071
+VignetteBuilder: knitr
+Imports: 
+    plotly,
+    dplyr,
+    magrittr,
+    rmarkdown,
+    roll,
+    lubridate,
+    futile.logger,
+    Rblpapi,
+    DBI,
+    RSQLite,
+    tidyr,
+    stats,
+    tibble,
+    readr,
+    stringr,
+    jrvFinance,
+    data.table

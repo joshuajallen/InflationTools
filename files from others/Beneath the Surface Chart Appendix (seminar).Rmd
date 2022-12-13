@@ -1,0 +1,276 @@
+---
+title: 'Beneath the Surface: Chart Appendix Seminar'
+author: "Catherine Taylor"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Correlation Surface Charts
+
+Rolling 1 year (260 day) correlation coefficients across each maturity on the inflation swap curve. 
+Each maturity is measured in forward space (1y1y, 1y2y, 1y3y...1y30y)
+
+## 1.1 ERI
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+library(shiny)
+library(plotly)
+library(ggplot2)
+library(readxl)
+library(tidyverse)
+library(zoo)
+library(dplyr)
+library(data.table)
+library(tidyquant)
+
+#library(xlsx)
+
+source("N:/328890/Inflation markets/Inflation Function Library.R")
+Inflation_data_final <- read_excel("N:/320562/Inflation/2019Q3_note/Data/inf_dt_final.xlsx", sheet = "dt")
+#Inflation_data_date <- read_excel("N:/320562/Inflation/2019Q3_note/Data/inf_dt_final.xlsx", sheet = "dt")
+#Inflation_data_final <- cbind(Inflation_data_date[ ,1], Inflation_data_final[ ,2:112])
+
+Correlation_data_final <- read_excel("N:/328890/Inflation markets/Final note/Correlations.xlsx", sheet = "R import")
+
+# Correlation surface charts
+
+Correl_fundamentals <- Correlation_data_final[ ,c(1:36, 78:82)]
+
+# ERI
+ERI <- Correl_fundamentals[ ,c(1:36, 39)]
+ERI <- ERI[ ,-c(3:6)]
+ERI <- na.omit(ERI)
+
+ERI_corr <- function(i) {
+  Corr <- runCor(ERI$eri, ERI[ ,i], n=260, cumulative = F, use = "all.obs")
+  return(Corr)
+}
+
+ERI_matrix <- sapply(2:31, ERI_corr)
+
+# Plot surface
+dates <- ERI$...1
+mats <- c(1:30)
+
+plot_ly(x=mats, y= dates, z= ERI_matrix) %>% add_surface(colorscale = "YlGnBu",
+  contours = list(
+    z = list(
+      show=TRUE,
+      usecolormap=TRUE,
+      highlightcolor="#ff0000",
+      project=list(z=TRUE)
+    ) ) ) %>%
+  layout(title = "ERI correlation surface (1 year window)",
+         
+         scene = list(
+           
+           xaxis = list(title="Spot maturity (x)" ), 
+           yaxis = list(title="Date (y)"),
+           zaxis = list(title="Rho (z)")
+         ) ) 
+
+```
+
+## 1.2 Brent
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Brent
+Brent <- Correl_fundamentals[ ,c(1:36, 37)]
+Brent <- Brent[ ,-c(3:6)]
+Brent <- na.omit(Brent)
+
+Brent_corr <- function(i) {
+  Corr <- runCor(Brent$brent_usd, Brent[ ,i], n=260, cumulative = F, use = "all.obs")
+  return(Corr)
+}
+
+Brent_matrix <- sapply(2:31, Brent_corr)
+
+# Plot surface
+dates <- Brent$...1
+mats <- c(1:30)
+
+plot_ly(x=mats, y= dates, z= Brent_matrix) %>% add_surface(colorscale = "YlGnBu",
+                                                           contours = list(
+                                                             z = list(
+                                                               show=TRUE,
+                                                               usecolormap=TRUE,
+                                                               highlightcolor="#ff0000",
+                                                               project=list(z=TRUE)
+                                                             ) ) ) %>%
+  layout(title = "Brent correlation surface (1 year window)",
+         
+         scene = list(
+           
+           xaxis = list(title="Spot maturity (x)" ), 
+           yaxis = list(title="Date (y)"),
+           zaxis = list(title="Rho (z)")
+         ) ) 
+
+```
+
+## 1.3 FTSE
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# FTSE
+FTSE <- Correl_fundamentals[ ,c(1:36, 41)]
+FTSE <- FTSE[ ,-c(3:6)]
+FTSE <- na.omit(FTSE)
+
+#plot(Brent$brent_usd, type="l")
+
+FTSE_corr <- function(i) {
+  Corr <- runCor(FTSE$uk_foc_ftse,FTSE[ ,i], n=260, cumulative = F, use = "all.obs")
+  return(Corr)
+}
+
+FTSE_matrix <- sapply(2:31, FTSE_corr)
+
+# Plot surface
+dates <- FTSE$...1
+mats <- c(1:30)
+
+plot_ly(x=mats, y= dates, z= FTSE_matrix) %>% add_surface(colorscale = "YlGnBu",
+                                                           contours = list(
+                                                             z = list(
+                                                               show=TRUE,
+                                                               usecolormap=TRUE,
+                                                               highlightcolor="#ff0000",
+                                                               project=list(z=TRUE)
+                                                             ) ) ) %>%
+  layout(title = "FTSE correlation surface (1 year window)",
+         
+         scene = list(
+           
+           xaxis = list(title="Spot maturity (x)" ), 
+           yaxis = list(title="Date (y)"),
+           zaxis = list(title="Rho (z)")
+         ) ) 
+
+
+```
+
+
+## 1.4 ESI
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# ESI correlation
+Correl_fundamentals <- Correlation_data_final[ ,c(1:36, 78:82, 107)]
+
+ESI <- Correl_fundamentals[ ,c(1:36, 42)]
+ESI <- ESI[ ,-c(3:6)]
+ESI <- na.omit(ESI)
+
+#plot(Brent$brent_usd, type="l")
+
+ESI_corr <- function(i) {
+  Corr <- runCor(ESI$cesigbp, ESI[ ,i], n=260, cumulative = F, use = "all.obs")
+  return(Corr)
+}
+
+ESI_matrix <- sapply(2:31, ESI_corr)
+
+# Plot surface
+dates <- ESI$...1
+mats <- c(1:30)
+
+plot_ly(x=mats, y= dates, z= ESI_matrix) %>% add_surface(colorscale = "YlGnBu",
+                                                           contours = list(
+                                                             z = list(
+                                                               show=TRUE,
+                                                               usecolormap=TRUE,
+                                                               highlightcolor="#ff0000",
+                                                               project=list(z=TRUE)
+                                                             ) ) ) %>%
+  layout(title = "ESI correlation surface (1 year window)",
+         
+         scene = list(
+           
+           xaxis = list(title="Spot maturity (x)" ), 
+           yaxis = list(title="Date (y)"),
+           zaxis = list(title="Rho (z)")
+         ) ) 
+```
+
+# 2. Price Surface Chart
+
+RPI inflation swap rate across the inflation swap curve over time.
+Each maturity is measured in forward space (1y1y, 1y2y, 1y3y...1y30y)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+Inflation_data_numeric <- read_excel("N:/320562/Inflation/2019Q3_note/Data/inf_dt_final.xlsx", sheet = "dt", col_types = "numeric")
+
+price_matrix <- Inflation_data_numeric[ ,c(7:36)]
+
+price_matrix <- as.matrix(price_matrix)
+
+dates <- Correl_fundamentals$...1
+
+plot_ly(x=mats, y= dates, z= price_matrix) %>% add_surface(colorscale = "YlGnBu",
+                                                         contours = list(
+                                                           z = list(
+                                                             show=TRUE,
+                                                             usecolormap=TRUE,
+                                                             highlightcolor="#ff0000",
+                                                             project=list(z=TRUE)
+                                                           ) ) ) %>%
+  layout(title = "Price Surface",
+         
+         scene = list(
+           
+           xaxis = list(title="Spot maturity (x)" ), 
+           yaxis = list(title="Date (y)"),
+           zaxis = list(title="Price (z)")
+         ) ) 
+
+```
+
+# 3. Forward Surface Chart
+
+RPI inflation swap price forward curve at each spot maturity across the spot curve 
+
+eg. x=2 y=2 : 2 year rate, 2 years forward
+
+## 3.1 12 November 2019
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+forwards = c(0:10)
+mats = c(1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,40,50)
+Inflation_data <- read_excel("N:/328890/Inflation markets/Inflation forward matrix.xlsx",sheet = "Sheet2")
+source("N:/328890/Inflation markets/Inflation Function Library.R")
+PlotSurface(2573)
+
+```
+
+## 3.3 30 May 2016 (pre-referendum)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+forwards = c(0:10)
+mats = c(1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,40,50)
+Inflation_data <- read_excel("N:/328890/Inflation markets/Inflation forward matrix.xlsx",sheet = "Sheet2")
+source("N:/328890/Inflation markets/Inflation Function Library.R")
+PlotSurface(1674)
+
+```
+
+
+## 3.4 31 October 2016 (post referendum)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+forwards = c(0:10)
+mats = c(1,2,3,4,5,6,7,8,9,10,12,15,20,25,30,40,50)
+Inflation_data <- read_excel("N:/328890/Inflation markets/Inflation forward matrix.xlsx",sheet = "Sheet2")
+source("N:/328890/Inflation markets/Inflation Function Library.R")
+PlotSurface(1784)
+
+```
